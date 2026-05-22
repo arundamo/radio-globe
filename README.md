@@ -1,12 +1,12 @@
 # 📡 Radio Globe
 
-A lightweight Node.js web application that lets you browse and listen to **40+ global internet radio stations** through a clean, dark-themed single-page interface — and exposes a fully documented REST API so AI agents and other tools can interact with it programmatically.
+A lightweight Node.js web application that lets you browse and listen to **43+ global internet radio stations** through a clean, dark-themed single-page interface — and exposes a fully documented REST API so AI agents and other tools can interact with it programmatically.
 
 ---
 
 ## Features
 
-- 🌍 40 curated stations across 10+ countries
+- 🌍 43 curated stations across 11+ countries
 - 🔊 Server-side audio proxy (hides upstream stream URLs, normalises CORS)
 - 🔍 Filterable by genre tag, country, or free-text search
 - 📄 Self-describing [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) spec served at `/openapi.json`
@@ -204,6 +204,9 @@ Agent: GET /stations?tag=jazz&cc=FR
 | s38 | 181.fm Country | United States | country |
 | s39 | 181.fm The Mix | United States | pop, mix |
 | s40 | Smooth Jazz Florida | United States | jazz, smooth |
+| s41 | Radio City Hindi | India | bollywood, pop, hindi |
+| s42 | Radio City Tamil | India | tamil, pop, regional |
+| s43 | Radio City Kannada | India | kannada, pop, regional |
 
 ---
 
