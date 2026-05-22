@@ -45,7 +45,115 @@ const STATIONS = [
   { id:"s40", name:"Smooth Jazz Florida",   stream:"https://smoothjazz.cdnstream1.com/2585_128.mp3",          country:"United States", cc:"US", tags:"jazz,smooth",             lat:25.77,  lon:-80.19  },
 ];
 
+// Pre-process each station's searchable fields once at startup to avoid
+// repeated toLowerCase / split calls on every incoming request.
+const STATIONS_INDEXED = STATIONS.map(s => ({
+  ...s,
+  _nameLower:    s.name.toLowerCase(),
+  _countryLower: s.country.toLowerCase(),
+  _tagsLower:    s.tags.toLowerCase(),
+  _tagsArray:    s.tags.toLowerCase().split(","),
+}));
+
 const PORT = process.env.PORT || 3000;
+
+// Build the OpenAPI spec once at startup
+const OPENAPI_SPEC = {
+  openapi: "3.1.0",
+  info: {
+    title: "Radio Globe API",
+    version: "1.0.0",
+    description: "A proxy API for 40+ global internet radio stations. Browse stations by genre, country or keyword, then stream audio via the server-side proxy."
+  },
+  servers: [{ url: `http://localhost:${PORT}`, description: "Local server" }],
+  paths: {
+    "/stations": {
+      get: {
+        operationId: "listStations",
+        summary: "List radio stations",
+        description: "Returns the full station catalogue. Supports optional filtering by query, tag, country name and country code. Stream URLs are never exposed.",
+        parameters: [
+          { name: "q",       in: "query", schema: { type: "string" }, description: "Full-text search across station name, country and tags." },
+          { name: "tag",     in: "query", schema: { type: "string" }, description: "Filter by a single genre tag (e.g. jazz, rock, news)." },
+          { name: "country", in: "query", schema: { type: "string" }, description: "Filter by country name (case-insensitive, partial match)." },
+          { name: "cc",      in: "query", schema: { type: "string" }, description: "Filter by ISO 3166-1 alpha-2 country code (e.g. US, GB, DE)." },
+        ],
+        responses: {
+          "200": {
+            description: "Array of station objects",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { "$ref": "#/components/schemas/Station" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stations/{id}": {
+      get: {
+        operationId: "getStation",
+        summary: "Get a single station by ID",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" }, description: "Station ID (e.g. s1, s12)." }
+        ],
+        responses: {
+          "200": {
+            description: "Station object",
+            content: { "application/json": { schema: { "$ref": "#/components/schemas/Station" } } }
+          },
+          "404": { description: "Station not found" }
+        }
+      }
+    },
+    "/stream/{id}": {
+      get: {
+        operationId: "streamStation",
+        summary: "Proxy the live audio stream for a station",
+        description: "Returns a chunked audio stream (audio/mpeg or audio/aac). Keep the connection open to receive continuous audio.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" }, description: "Station ID." }
+        ],
+        responses: {
+          "200": {
+            description: "Live audio stream",
+            content: { "audio/mpeg": {}, "audio/aac": {} }
+          },
+          "404": { description: "Station not found" },
+          "502": { description: "Upstream stream error" }
+        }
+      }
+    },
+    "/openapi.json": {
+      get: {
+        operationId: "getOpenAPISpec",
+        summary: "Retrieve this OpenAPI specification",
+        responses: {
+          "200": { description: "OpenAPI 3.1 JSON document" }
+        }
+      }
+    }
+  },
+  components: {
+    schemas: {
+      Station: {
+        type: "object",
+        properties: {
+          id:      { type: "string", example: "s1" },
+          name:    { type: "string", example: "SomaFM Groove Salad" },
+          country: { type: "string", example: "United States" },
+          cc:      { type: "string", example: "US" },
+          tags:    { type: "string", example: "ambient,lofi,chill" },
+          lat:     { type: "number", example: 37.77 },
+          lon:     { type: "number", example: -122.41 }
+        }
+      }
+    }
+  }
+};
 
 const server = http.createServer((req, res) => {
   const parsed = url.parse(req.url, true);
@@ -57,18 +165,51 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
-  // GET /stations — return station list (without real stream URLs)
-  if (parsed.pathname === "/stations") {
+  // GET /openapi.json — machine-readable API spec
+  if (parsed.pathname === "/openapi.json") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    const safe = STATIONS.map(({ stream, ...rest }) => rest);
+    res.end(JSON.stringify(OPENAPI_SPEC, null, 2));
+    return;
+  }
+
+  // GET /stations — return station list with optional filters
+  if (parsed.pathname === "/stations") {
+    const { q, tag, country, cc } = parsed.query;
+    const lq = q       ? q.toLowerCase()       : null;
+    const lt = tag     ? tag.toLowerCase()      : null;
+    const lc = country ? country.toLowerCase()  : null;
+    const uc = cc      ? cc.toUpperCase()       : null;
+
+    const filtered = STATIONS_INDEXED.filter(s => {
+      if (lq && !s._nameLower.includes(lq) && !s._countryLower.includes(lq) && !s._tagsLower.includes(lq)) return false;
+      if (lt && !s._tagsArray.includes(lt)) return false;
+      if (lc && !s._countryLower.includes(lc)) return false;
+      if (uc && s.cc !== uc) return false;
+      return true;
+    });
+
+    // Strip internal index fields and the private stream URL before responding
+    const results = filtered.map(({ stream, _nameLower, _countryLower, _tagsLower, _tagsArray, ...rest }) => rest);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(results));
+    return;
+  }
+
+  // GET /stations/:id — single station detail
+  const stationMatch = parsed.pathname.match(/^\/stations\/(.+)$/);
+  if (stationMatch) {
+    const station = STATIONS_INDEXED.find(s => s.id === stationMatch[1]);
+    if (!station) { res.writeHead(404, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Station not found" })); return; }
+    const { stream, _nameLower, _countryLower, _tagsLower, _tagsArray, ...safe } = station;
+    res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(safe));
     return;
   }
 
   // GET /stream/:id — proxy the actual audio stream
-  const match = parsed.pathname.match(/^\/stream\/(.+)$/);
-  if (match) {
-    const station = STATIONS.find(s => s.id === match[1]);
+  const streamMatch = parsed.pathname.match(/^\/stream\/(.+)$/);
+  if (streamMatch) {
+    const station = STATIONS.find(s => s.id === streamMatch[1]);
     if (!station) { res.writeHead(404); res.end("Not found"); return; }
 
     const streamUrl = new URL(station.stream);
@@ -274,5 +415,7 @@ loadStations();
 
 server.listen(PORT, () => {
   console.log("\n✅ Radio Globe running at http://localhost:" + PORT);
-  console.log("   Open that URL in your browser\n");
+  console.log("   Browser UI : http://localhost:" + PORT + "/");
+  console.log("   Stations   : http://localhost:" + PORT + "/stations");
+  console.log("   OpenAPI    : http://localhost:" + PORT + "/openapi.json\n");
 });
