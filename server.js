@@ -43,6 +43,9 @@ const STATIONS = [
   { id:"s38", name:"181.fm Country",        stream:"https://listen.181fm.com/181-country_128k.mp3",            country:"United States", cc:"US", tags:"country",                 lat:36.17,  lon:-86.78  },
   { id:"s39", name:"181.fm The Mix",        stream:"https://listen.181fm.com/181-themix_128k.mp3",             country:"United States", cc:"US", tags:"pop,mix",                 lat:37.39,  lon:-79.19  },
   { id:"s40", name:"Smooth Jazz Florida",   stream:"https://smoothjazz.cdnstream1.com/2585_128.mp3",          country:"United States", cc:"US", tags:"jazz,smooth",             lat:25.77,  lon:-80.19  },
+  { id:"s41", name:"Radio City Hindi",      stream:"https://prclive1.listenon.in/Hindi",                        country:"India",         cc:"IN", tags:"bollywood,pop,hindi",     lat:19.08,  lon:72.88   },
+  { id:"s42", name:"Radio City Tamil",      stream:"https://prclive1.listenon.in/Tamil",                        country:"India",         cc:"IN", tags:"tamil,pop,regional",      lat:13.08,  lon:80.27   },
+  { id:"s43", name:"Radio City Kannada",    stream:"https://prclive1.listenon.in/Kannada",                      country:"India",         cc:"IN", tags:"kannada,pop,regional",    lat:12.97,  lon:77.59   },
 ];
 
 // Pre-process each station's searchable fields once at startup to avoid
@@ -63,7 +66,7 @@ const OPENAPI_SPEC = {
   info: {
     title: "Radio Globe API",
     version: "1.0.0",
-    description: "A proxy API for 40+ global internet radio stations. Browse stations by genre, country or keyword, then stream audio via the server-side proxy."
+    description: "A proxy API for 43+ global internet radio stations. Browse stations by genre, country or keyword, then stream audio via the server-side proxy."
   },
   servers: [{ url: `http://localhost:${PORT}`, description: "Local server" }],
   paths: {
